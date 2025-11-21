@@ -3,7 +3,7 @@ buildscript {
     ext {
         def vcode = (int)(((new Date().getTime()/1000) - 1559347200) / 10)
         appVersionCode = vcode
-        appVersionName = '25.11.12'
+        appVersionName = '25.11.14'
         orientation = "unspecified"
         provider_authority = "tech.ula.provider.fileprovider"
         support_assets_version = "v1.3.43"
