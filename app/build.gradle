@@ -24,12 +24,18 @@ android {
         minSdkVersion 21
         targetSdkVersion 29
         versionCode vcode
-        versionName "2.6.5"
+        versionName "2.8.2"
         
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments clearPackageData: 'true'
 
         vectorDrawables.useSupportLibrary = true
+        buildConfigField 'boolean', 'ENABLE_PLAY_SERVICES', 'true'
+
+        //these are used to help determine the resolution
+        buildConfigField 'boolean', 'FORCE_PORTRAIT_GEOMETRY', 'true'
+        buildConfigField 'int', "MAX_DIMENSION", "1280"
+        buildConfigField 'int', "MIN_DIMENSION", "360"
 
         // Ignore Sentry packages that cause lint failure
         lintOptions {
@@ -72,6 +78,7 @@ android {
             debuggable true
             minifyEnabled false
             testCoverageEnabled true
+            buildConfigField 'boolean', 'ENABLE_PLAY_SERVICES', 'false'
         }
         beta {
             versionNameSuffix "-beta-$defaultConfig.versionCode"
@@ -198,7 +205,7 @@ ext.architectures = ["armeabi-v7a", "arm64-v8a", "x86", "x86_64"]
 ext.libDir = "$project.projectDir/src/main/jniLibs"
 
 task downloadAssets(type: Download) {
-    def assetVersion = "v1.1.7"
+    def assetVersion = "v1.2.6"
     def baseUrl = "https://github.com/CypherpunkArmory/UserLAnd-Assets-Support/releases/download/$assetVersion"
     for (arch in architectures) {
         src "$baseUrl/$arch-assets.zip"
@@ -251,6 +258,7 @@ dependencies {
     def support_library_version = '1.1.0-alpha06'
     def preference_version = '1.1.0-alpha05'
     def ktx_version = '1.0.2'
+    def billing_version = '2.2.1'
 
     implementation project(':terminal-term')
 
@@ -276,6 +284,9 @@ dependencies {
     implementation "io.sentry:sentry-android:$sentry_version"
     implementation "org.slf4j:slf4j-nop:$slf4j_version"
 
+    implementation "com.android.billingclient:billing-ktx:$billing_version"
+    implementation "com.google.android.gms:play-services-base:17.2.1"
+
     def mockito_version = '2.23.0'
     def mockito_kotlin_version = '2.1.0'
     def core_testing_version = '2.0.0-beta01'
@@ -300,5 +311,7 @@ dependencies {
         exclude group: 'org.jetbrains.kotlin'
     }
     androidTestUtil "androidx.test:orchestrator:$androidx_test_version"
+
+    implementation 'com.google.code.gson:gson:2.8.6'
 
 }

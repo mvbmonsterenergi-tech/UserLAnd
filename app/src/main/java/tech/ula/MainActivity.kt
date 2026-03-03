@@ -12,9 +12,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.net.wifi.WifiManager
-import android.os.Build
-import android.os.Bundle
-import android.os.StatFs
+import android.os.* // ktlint-disable no-wildcard-imports
 import com.google.android.material.textfield.TextInputEditText
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.appcompat.app.AppCompatActivity
@@ -33,6 +31,7 @@ import androidx.navigation.Navigation
 import androidx.navigation.findNavController
 import androidx.navigation.ui.NavigationUI
 import androidx.navigation.ui.NavigationUI.setupWithNavController
+import com.google.gson.Gson
 import kotlinx.android.synthetic.main.activity_main.* // ktlint-disable no-wildcard-imports
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +57,7 @@ class MainActivity : AppCompatActivity(), SessionListFragment.SessionSelection, 
 
     private var progressBarIsVisible = false
     private var currentFragmentDisplaysProgressDialog = false
+    private var autoStarted = false
 
     private val logger = SentryLogger()
     private val ulaFiles by lazy { UlaFiles(this, this.applicationInfo.nativeLibraryDir) }
@@ -75,11 +75,19 @@ class MainActivity : AppCompatActivity(), SessionListFragment.SessionSelection, 
     }
 
     private val userFeedbackPrompter by lazy {
-        UserFeedbackPrompter(this)
+        UserFeedbackPrompter(this, findViewById(R.id.layout_user_prompt_insert))
     }
 
     private val optInPrompter by lazy {
-        CollectionOptInPrompter(this)
+        CollectionOptInPrompter(this, findViewById(R.id.layout_user_prompt_insert))
+    }
+
+    val billingManager by lazy {
+        BillingManager(this, contributionPrompter.onEntitledSubPurchases, contributionPrompter.onEntitledInAppPurchases, contributionPrompter.onPurchase, contributionPrompter.onSubscriptionSupportedChecked)
+    }
+
+    private val contributionPrompter by lazy {
+        ContributionPrompter(this, findViewById(R.id.layout_user_prompt_insert))
     }
 
     private val downloadBroadcastReceiver = object : BroadcastReceiver() {
@@ -134,6 +142,14 @@ class MainActivity : AppCompatActivity(), SessionListFragment.SessionSelection, 
                 .get(MainActivityViewModel::class.java)
     }
 
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent?.type.equals("settings"))
+            navController.navigate(R.id.settings_fragment)
+        else
+            autoStart()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -147,11 +163,15 @@ class MainActivity : AppCompatActivity(), SessionListFragment.SessionSelection, 
 
         val promptViewHolder = findViewById<ViewGroup>(R.id.layout_user_prompt_insert)
         if (userFeedbackPrompter.viewShouldBeShown()) {
-            userFeedbackPrompter.showView(promptViewHolder, this)
+            userFeedbackPrompter.showView()
         }
 
         if (optInPrompter.viewShouldBeShown()) {
-            optInPrompter.showView(promptViewHolder, this)
+            optInPrompter.showView()
+        }
+
+        if (contributionPrompter.viewShouldBeShown()) {
+            contributionPrompter.showView()
         }
 
         handleQWarning()
@@ -161,6 +181,10 @@ class MainActivity : AppCompatActivity(), SessionListFragment.SessionSelection, 
         }
 
         viewModel.getState().observe(this, stateObserver)
+        if (intent?.type.equals("settings"))
+            navController.navigate(R.id.settings_fragment)
+        else
+            autoStart()
     }
 
     private fun setNavStartDestination() {
@@ -210,6 +234,18 @@ class MainActivity : AppCompatActivity(), SessionListFragment.SessionSelection, 
         return true
     }
 
+    private fun autoStart() {
+        val prefs = getSharedPreferences("apps", Context.MODE_PRIVATE)
+        val json = prefs.getString("AutoApp", " ")
+        if (json != null)
+            if (json.compareTo(" ") != 0) {
+                val gson = Gson()
+                val autoApp = gson.fromJson(json, App::class.java)
+                autoStarted = true
+                appHasBeenSelected(autoApp, true)
+            }
+    }
+
     override fun onStart() {
         super.onStart()
         LocalBroadcastManager.getInstance(this)
@@ -219,8 +255,14 @@ class MainActivity : AppCompatActivity(), SessionListFragment.SessionSelection, 
 
     override fun onResume() {
         super.onResume()
-
+        billingManager.querySubPurchases()
+        billingManager.queryInAppPurchases()
         viewModel.handleOnResume()
+    }
+
+    override fun onDestroy() {
+        billingManager.destroy()
+        super.onDestroy()
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -252,13 +294,13 @@ class MainActivity : AppCompatActivity(), SessionListFragment.SessionSelection, 
         unregisterReceiver(downloadBroadcastReceiver)
     }
 
-    override fun appHasBeenSelected(app: App) {
+    override fun appHasBeenSelected(app: App, autoStart: Boolean) {
         if (!PermissionHandler.permissionsAreGranted(this)) {
             PermissionHandler.showPermissionsNecessaryDialog(this)
             viewModel.waitForPermissions(appToContinue = app)
             return
         }
-        viewModel.submitAppSelection(app)
+        viewModel.submitAppSelection(app, autoStart)
     }
 
     override fun sessionHasBeenSelected(session: Session) {
@@ -314,7 +356,7 @@ class MainActivity : AppCompatActivity(), SessionListFragment.SessionSelection, 
         val windowManager = applicationContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
         val orientation = applicationContext.resources.configuration.orientation
-        deviceDimensions.saveDeviceDimensions(windowManager, DisplayMetrics(), orientation)
+        deviceDimensions.saveDeviceDimensions(windowManager, DisplayMetrics(), orientation, defaultSharedPreferences)
         session.geometry = deviceDimensions.getScreenResolution()
     }
 
@@ -323,6 +365,11 @@ class MainActivity : AppCompatActivity(), SessionListFragment.SessionSelection, 
                 .putExtra("type", "start")
                 .putExtra("session", session)
         startService(serviceIntent)
+        if (autoStarted) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                finish()
+            }, 2000)
+        }
     }
 
     /*
